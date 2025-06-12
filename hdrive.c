@@ -1,3 +1,6 @@
+#include "dos/dos.h"
+#include "exec/types.h"
+#include "devices/trackdisk.h"
 
 #define	SETFN(n)	openflags |= n
 #define TSTFN(n)	openflags & n
@@ -27,6 +30,12 @@ static BPTR	file;
 
 struct MsgPort *diskport;
 struct IOExtTD *diskreq1, diskreqs[10], *lastreq;
+struct MsgPort *CreatePort();
+struct IORequest *CreateExtIO();
+BYTE OpenDevice();
+BPTR Open();
+BPTR Lock();
+BOOL CheckIO();
 
 int AllocDiskIO()
 {	short	i;
@@ -45,7 +54,7 @@ int AllocDiskIO()
 		SETFN(AL_PORT);
 		if ((diskreq1=(struct IOExtTD *)CreateExtIO(diskport,sizeof(struct IOExtTD)))==0) return 31;
 		SETFN(AL_IOREQ);
-		if (OpenDevice(TD_NAME,0,(struct IORequest *)diskreq1,0)) return 32;
+		if (OpenDevice((STRPTR)TD_NAME,0,(struct IORequest *)diskreq1,0)) return 32;
 		SETFN(AL_TDISK);
 		for (i=0; i<9; i++)
 		{	diskreqs[i] = *diskreq1;

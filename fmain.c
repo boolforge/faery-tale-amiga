@@ -1,5 +1,23 @@
 /* fmain.c - created Aug 86 by Talin - The Faerie Tale Adventure */
 
+#include "exec/types.h"
+#include "exec/memory.h"
+#include "exec/devices.h"
+#include "graphics/view.h"
+#include "hardware/custom.h"
+#include "graphics/gfxmacros.h"
+#include "graphics/copper.h"
+#include "graphics/display.h"
+#include "graphics/text.h"
+#include "graphics/gfxbase.h"
+#include "graphics/sprite.h"
+#include "libraries/diskfont.h"
+#include "libraries/dosextens.h"
+#include "devices/input.h"
+#include "devices/inputevent.h"
+#include "devices/audio.h"
+#include "workbench/startup.h"
+
 #include "ftale.h"
 
 /****** this section defines the variables used to communicate with the 
@@ -455,7 +473,6 @@ SHORT j,k,n;
 
 extern struct ColorMap *GetColorMap();
 struct GfxBase *GfxBase;
-struct Library *LayersBase;
 
 UBYTE *nhinor, *nhivar;
 extern UBYTE hinor, hivar;
@@ -647,7 +664,7 @@ extern short minimap[114];
 long	LoadSeg(), seg;
 struct	DiskFontHeader *font;
 struct  TextFont *tfont, *afont;
-struct  TextAttr topaz_ta = { "topaz.font", 8, 0, FPF_ROMFONT };
+struct  TextAttr topaz_ta = { (STRPTR)"topaz.font", 8, 0, FPF_ROMFONT };
 
 unsigned char 
 	*into_chip(),
@@ -714,7 +731,6 @@ struct in_work handler_data;
 #define AL_TERR		0x4000
 
 struct BitMap *wb_bmap;
-struct Layer_Info *li, /* *NewLayerInfo() */ ;
 struct Process *thistask /* , *FindTask() */ ;
 BPTR origDir;
 int trapper();
@@ -725,20 +741,29 @@ BOOL			audio_open;
 
 struct BitMap work_bm;
 
+APTR AllocMem();
+PLANEPTR AllocRaster();
+BPTR CurrentDir();
+BPTR Open();
+BYTE OpenDevice();
+struct Library *OpenLibrary();
+struct IORequest *CreateExtIO();
+struct MsgPort *CreatePort();
+struct TextFont *OpenFont();
+struct Task *FindTask();
+
 open_all()
 {	register long i;
 	long file;
 
 	openflags = 0;
 
-	if ((GfxBase = (struct GfxBase *)OpenLibrary("graphics.library",0)) == NULL) return 2;
-	if ((LayersBase = OpenLibrary("layers.library",0)) == NULL) return 2;
+	if ((GfxBase = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library",0)) == NULL) return 2;
 	SETFN(AL_GBASE);		/* opened the graphics library */
 	oldview = GfxBase->ActiView;
 
 	if (!MakeBitMap(&work_bm,2,640,200)) return 2;
 
-	li = NewLayerInfo();
 	InitRastPort(&rp_map);
 	InitRastPort(&rp_text);
 	InitRastPort(&rp_text2);
@@ -894,7 +919,7 @@ open_all()
 			ioaudio->ioa_Data = &data;
 			ioaudio->ioa_Length = 1;
 
-			if (!OpenDevice("audio.device", 0L, &ioaudio->ioa_Request,0L))
+			if (!OpenDevice((STRPTR)"audio.device", 0L, &ioaudio->ioa_Request,0L))
 			{
 				ioaudio->ioa_Request.io_Command = CMD_RESET;
 				ioaudio->ioa_Request.io_Flags = IOF_QUICK;
@@ -993,10 +1018,9 @@ close_all()
 
 	FreeDiskIO();
 
-	if (TSTFN(AL_GBASE)) { CloseLibrary((struct Library *)GfxBase); CloseLibrary(LayersBase); }
+	if (TSTFN(AL_GBASE)) { CloseLibrary((struct Library *)GfxBase); }
 	if (TSTFN(AL_BMAP)) FreeMem(bm_page1,5*BM_SIZE);
 	if (TSTFN(AL_BMAP)) UnMakeBitMap(&work_bm);
-	DisposeLayerInfo(li);
 	FreeSprite(0);
 	openflags = 0;
 
@@ -3026,7 +3050,7 @@ add_device()
 	handlerStuff.is_Code = (void (*)())HandlerInterface;
 	handlerStuff.is_Node.ln_Pri = 51;
 
-	error = OpenDevice("input.device",0,(struct IORequest *)inputRequestBlock,0);
+	error = OpenDevice((STRPTR)"input.device",0,(struct IORequest *)inputRequestBlock,0);
 	if (error) return FALSE;
 
 	inputRequestBlock->io_Command = IND_ADDHANDLER;
@@ -3062,7 +3086,7 @@ print_options()
 	{	if (j & 1) x = 482; else x = 430;
 		y = ((j/2) * 9) + 8;
 		Move(&rp_text2,x,y);
-		Text(&rp_text2,"      ",6);
+		Text(&rp_text2,(STRPTR)"      ",6);
 		real_options[j]=-1;
 	}
 }
@@ -3084,11 +3108,11 @@ propt(j,pena) short j,pena;
 	if (j & 1) x = 482; else x = 430;
 	y = ((j/2) * 9) + 8;
 	Move(&rp_text2,x,y);
-	Text(&rp_text2,"      ",6);
+	Text(&rp_text2,(STRPTR)"      ",6);
 	Move(&rp_text2,x+4,y);
-	if (cmode >= USE) Text(&rp_text2,menus[cmode].label_list+k,5);
-	else if (k<25) Text(&rp_text2,label1+k,5);
-	else Text(&rp_text2,menus[cmode].label_list+(k-25),5);
+	if (cmode >= USE) Text(&rp_text2,(STRPTR)(menus[cmode].label_list+k),5);
+	else if (k<25) Text(&rp_text2,(STRPTR)(label1+k),5);
+	else Text(&rp_text2,(STRPTR)(menus[cmode].label_list+(k-25)),5);
 }
 
 long secx, secy;
@@ -3318,7 +3342,7 @@ do_option(hit) short hit;
 			SetDrMd(&rp_map,JAM1);
 			SetAPen(&rp_map,31);
 			if (i > 0 && i < 320 && j > 0 && j <143)
-			{	Move(&rp_map,i,j); Text(&rp_map,"+",1); }
+			{	Move(&rp_map,i,j); Text(&rp_map,(STRPTR)"+",1); }
 			viewstatus = 1;
 			stillscreen();
 			prq(5);
@@ -3618,11 +3642,101 @@ effect(num,speed) short num; long speed;
 	{	playsample(sample[num],sample_size[num]/2,speed); }
 }
 
+miscsave()
+{	/* save state */
+	unsigned short misc_info[40];
+	register unsigned short *ptr;
+	if (svflag)
+	{	ptr = misc_info;
+		*ptr++ = map_x;
+		*ptr++ = map_y;
+		*ptr++ = hero_x;
+		*ptr++ = hero_y;
+		*ptr++ = safe_x;
+		*ptr++ = safe_y;
+		*ptr++ = safe_r;
+		*ptr++ = img_x;
+		*ptr++ = img_y;
+		*ptr++ = cheat1;
+		*ptr++ = riding;
+		*ptr++ = flying;
+		*ptr++ = wcarry;
+		*ptr++ = turtleprox;
+		*ptr++ = raftprox;
+		*ptr++ = brave;
+		*ptr++ = luck;
+		*ptr++ = kind;
+		*ptr++ = wealth;
+		*ptr++ = hunger;
+		*ptr++ = fatigue;
+		*ptr++ = brother;
+		*ptr++ = princess;
+		*ptr++ = hero_sector;
+		*ptr++ = hero_place;
+		*ptr++ = daynight;
+		*ptr++ = lightlevel;
+		*ptr++ = actor_file;
+		*ptr++ = set_file;
+		*ptr++ = active_carrier;
+		*ptr++ = xtype;
+		*ptr++ = leader;
+		*ptr++ = secret_timer;
+		*ptr++ = light_timer;
+		*ptr++ = freeze_timer;
+		*ptr++ = cmode;
+		*ptr++ = encounter_type;
+		*ptr++ = 0;
+		*ptr++ = 0;
+		*ptr++ = 0;
+	}
+	saveload((void *)misc_info, 80);
+	if (!svflag)
+	{	ptr = misc_info;
+		map_x = *ptr++;
+		map_y = *ptr++;
+		hero_x = *ptr++;
+		hero_y = *ptr++;
+		safe_x = *ptr++;
+		safe_y = *ptr++;
+		safe_r = *ptr++;
+		img_x = *ptr++;
+		img_y = *ptr++;
+		cheat1 = *ptr++;
+		riding = *ptr++;
+		flying = *ptr++;
+		wcarry = *ptr++;
+		turtleprox = *ptr++;
+		raftprox = *ptr++;
+		brave = *ptr++;
+		luck = *ptr++;
+		kind = *ptr++;
+		wealth = *ptr++;
+		hunger = *ptr++;
+		fatigue = *ptr++;
+		brother = *ptr++;
+		princess = *ptr++;
+		hero_sector = *ptr++;
+		hero_place = *ptr++;
+		daynight = *ptr++;
+		lightlevel = *ptr++;
+		actor_file = *ptr++;
+		set_file = *ptr++;
+		active_carrier = *ptr++;
+		xtype = *ptr++;
+		leader = *ptr++;
+		secret_timer = *ptr++;
+		light_timer = *ptr++;
+		freeze_timer = *ptr++;
+		cmode = *ptr++;
+		encounter_type = *ptr++;
+	}
+}
+
 mod1save()
 {	/* save stuff */
-	saveload(julstuff,35);
-	saveload(philstuff,35);
-	saveload(kevstuff,35);
+	saveload((void *)julstuff,35);
+	saveload((void *)philstuff,35);
+	saveload((void *)kevstuff,35);
 	/* set stuff pointer */
 	stuff = blist[brother-1].stuff;
 
